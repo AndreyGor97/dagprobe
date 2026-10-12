@@ -45,6 +45,7 @@ jobs:
       - name: Compare Mode A vs Mode B (7 эталонных DAG)
         run: |
           uv sync --dev
+          mkdir -p spike/out
           uv run python spike/inspect_dags.py A > spike/out/mode_a.json
           AIRFLOW_HOME=$PWD/.airflow-b .venv-mode-b/bin/python spike/inspect_dags.py B > spike/out/mode_b.json
           .venv/bin/python spike/compare.py
