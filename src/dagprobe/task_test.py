@@ -28,7 +28,10 @@ import traceback
 
 from dagprobe.shim import _core, _fileintercept, _intercept, activate, deactivate
 from dagprobe.shim import _templates, xcom as xcom_mod
-from dagprobe.shim.airflow.providers.standard.operators.python import BranchPythonOperator
+from dagprobe.shim.airflow.providers.standard.operators.python import (
+    BranchPythonOperator,
+    ShortCircuitOperator,
+)
 from dagprobe.task_test import branch_targets, trigger_rule_decide
 
 path, run_json, out_path = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -51,6 +54,28 @@ def resolve(v):
     if isinstance(v, dict):
         return {k: resolve(x) for k, x in v.items()}
     return v
+
+
+def _run_mapped(task, args, kwargs):
+    # Dynamic task mapping (.expand()): callable — раз на элемент expand-аргументов;
+    # результат задачи — список результатов раскруток (downstream видит список, как в Airflow).
+    mapped = {k[9:]: v for k, v in kwargs.items() if k.startswith("__mapped_")}
+    static = {k: v for k, v in kwargs.items() if not k.startswith("__mapped_")}
+    if not mapped:
+        raise ValueError(f"mapped-задача {task.task_id!r} без expand-аргументов")
+    lengths = {len(v) for v in mapped.values()}
+    if len(lengths) > 1:
+        raise ValueError(
+            f"task {task.task_id!r}: expand-аргументы разной длины {sorted(lengths)}"
+        )
+    results = []
+    for i in range(lengths.pop()):
+        call_kwargs = {**static, **{k: v[i] for k, v in mapped.items()}}
+        try:
+            results.append(task.python_callable(*args, **call_kwargs))
+        except Exception as e:
+            raise RuntimeError(f"map_index={i}: {e}") from e
+    return results
 
 
 def topo_order(dag):
@@ -120,7 +145,14 @@ try:
                 kwargs = {k: resolve(v) for k, v in getattr(task, "op_kwargs", {}).items()}
                 ctx = _templates.build_context(task, logical_date, cfg.get("profile", "3.3"))
                 with _templates.current_context(ctx):
-                    result = task.python_callable(*args, **kwargs)
+                    if getattr(task, "mapped", False):
+                        result = _run_mapped(task, args, kwargs)
+                        if not result:
+                            # как в Airflow: 0 раскруток → задача skipped, downstream за ней тоже
+                            statuses[tid] = "skipped"
+                            continue
+                    else:
+                        result = task.python_callable(*args, **kwargs)
                 xcom_mod.xcom.set(tid, "return_value", result)
                 values[tid] = repr(result)
                 statuses[tid] = "ok"
@@ -130,6 +162,21 @@ try:
                     _chosen, skipped = branch_targets(task, result)
                     for s in skipped:
                         statuses[s] = "skipped"
+                elif isinstance(task, ShortCircuitOperator) and not result:
+                    # ShortCircuitOperator (airflow 3.3.2): falsy → скип downstream.
+                    # ignore_downstream_trigger_rules=True (дефолт): всё поддерево,
+                    # trigger_rule не учитываются; False — только прямые наследники.
+                    frontier = [str(task.task_id)]
+                    seen: set[str] = set()
+                    while frontier:
+                        cur = dag.task_dict[frontier.pop()]
+                        for s in cur.downstream_task_ids:
+                            if s in seen:
+                                continue
+                            seen.add(s)
+                            statuses[s] = "skipped"
+                            if getattr(task, "ignore_downstream_trigger_rules", True):
+                                frontier.append(s)
             else:
                 statuses[tid] = "skipped"  # не-Python задачи прогон не исполняет
         except Exception as e:

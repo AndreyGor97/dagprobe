@@ -30,3 +30,6 @@ spike/out/
 .coverage
 # артефакты A/B статусов — генерятся spike/run_ab.py
 spike/ab_dags/
+
+# локальные зеркала для публикации
+.scratch/

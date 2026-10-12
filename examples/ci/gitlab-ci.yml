@@ -1,0 +1,23 @@
+# DagProbe в GitLab CI: линт изменённых DAG в merge request.
+# Копируется в <ваш-репозиторий>/.gitlab-ci.yml (или в отдельный include-файл)
+# и правится только --dags-folder (каталог с DAG'ами).
+#
+# Поведение: линтуются и импортируются только изменённые в MR файлы; находки
+# уровня gate роняют джобу (exit 1), отчёт JUnit попадает в MR (Tests tab).
+# GIT_DEPTH: 0 нужен для git diff к целевой ветке (--changed-only).
+
+dagprobe:
+  stage: test
+  image: python:3.13
+  variables:
+    GIT_DEPTH: 0
+  script:
+    - pip install --quiet dagprobe
+    # в pipeline merge request base — целевая ветка; в push-пайплайне — main
+    - dagprobe lint --dags-folder dags --changed-only
+        --base-ref "origin/${CI_MERGE_REQUEST_TARGET_BRANCH_NAME:-main}"
+        --format junit > dagprobe-lint.xml
+  artifacts:
+    when: always
+    reports:
+      junit: dagprobe-lint.xml

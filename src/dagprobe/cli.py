@@ -197,6 +197,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     p_list = sub.add_parser("list", help="list DAG ids in a folder")
     p_list.add_argument("--dags-folder", type=Path, required=True)
+    p_list.add_argument("--fail-on", choices=GATES, default="error")
     p_lint = sub.add_parser("lint", help="import + lint a DAGs folder (CI gate)")
     p_lint.add_argument("--dags-folder", type=Path, required=True)
     p_lint.add_argument(
@@ -283,8 +284,8 @@ def main(argv: list[str] | None = None) -> int:
             ensure_ascii=False,
         )
         sys.stdout.write("\n")
-        # gate-уровни настраиваемые — Срез 6 (§6.21); у `list` остаётся строгий дефолт
-        return ci.exit_code(result.errors)
+        # gate-уровень настраиваемый (--fail-on), дефолт строгий — Срез 6 (§6.21)
+        return ci.exit_code(result.errors, fail_on=args.fail_on)
     return ci.USAGE  # unreachable: subparsers required
 
 

@@ -41,6 +41,14 @@ class BranchPythonOperator(PythonOperator):
     """
 
 
+class ShortCircuitOperator(PythonOperator):
+    """Shim ``ShortCircuitOperator``: falsy-результат → downstream пропущен.
+
+    Разбор — в движке прогона (``task_test``): falsy → скип всего downstream-поддерева
+    (дефолт ignore_downstream_trigger_rules=True) или прямых наследников (False).
+    """
+
+
 def get_current_context() -> dict[str, Any]:
     """Shim ``get_current_context`` (Срез 9): ``ti`` и прочие ключи контекста прогона."""
     from dagprobe.shim._templates import get_current_context as _get

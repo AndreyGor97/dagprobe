@@ -61,6 +61,54 @@ with DAG("ab_cascade", schedule=None, start_date=None, catchup=False) as dag:
     t1 >> t4
     t1 >> t5
 """,
+    "ab_shortcircuit": """
+from airflow.providers.standard.operators.python import PythonOperator, ShortCircuitOperator
+from airflow.sdk import DAG
+
+with DAG("ab_shortcircuit", schedule=None, start_date=None, catchup=False) as dag:
+    sc_true = ShortCircuitOperator(task_id="sc_true", python_callable=lambda **_: True)
+    after_true = PythonOperator(task_id="after_true", python_callable=lambda **_: 1)
+    sc_false = ShortCircuitOperator(task_id="sc_false", python_callable=lambda **_: "")
+    after_false = PythonOperator(task_id="after_false", python_callable=lambda **_: 1)
+    rescue = PythonOperator(
+        task_id="rescue", python_callable=lambda **_: 1, trigger_rule="all_done"
+    )
+
+    sc_true >> after_true
+    sc_false >> after_false >> rescue
+""",
+    "ab_expand": """
+from airflow.sdk import DAG, task
+
+with DAG("ab_expand", schedule=None, start_date=None, catchup=False) as dag:
+
+    @task
+    def make() -> list[int]:
+        return [1, 2, 3]
+
+    @task
+    def make_empty() -> list[int]:
+        return []
+
+    @task
+    def double(x: int) -> int:
+        return x * 2
+
+    @task
+    def double2(x: int) -> int:
+        return x * 2
+
+    @task
+    def collect(xs: list) -> int:
+        return sum(xs)
+
+    @task
+    def collect2(xs: list) -> int:
+        return sum(xs)
+
+    collect(double.expand(x=make()))
+    collect2(double2.expand(x=make_empty()))
+""",
 }
 
 # статус shim → состояние Airflow
