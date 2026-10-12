@@ -1,0 +1,9 @@
+# Фикстуры примера Срез 7 (examples/dags/branch_etl.py): Emulated Engine —
+# настоящий SQL на in-memory SQLite, включая INSERT из insert_rows.
+conns:
+  dwh:
+    conn_type: postgres
+    tables:
+      events:
+        - {event: signup, n: 3}
+        - {event: purchase, n: 1}

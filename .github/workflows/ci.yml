@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10  # актуальный мажор (проверено 2026-09-29)
+
+      - name: Install dependencies  # Python берётся из .python-version
+        run: uv sync --dev
+
+      - name: Lint (ruff)
+        run: uv run ruff check .
+
+      - name: Type-check (mypy)
+        run: uv run mypy src
+
+      - name: Test (pytest)  # Mode A: airflow не установлен
+        run: uv run pytest
+
+  mode-b:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10
+
+      - name: Create Mode B venv (real Airflow 3.3.2)
+        run: |
+          uv venv .venv-mode-b
+          uv pip install --python .venv-mode-b/bin/python "apache-airflow==3.3.2" \
+            --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-3.3.2/constraints-3.14.txt"
+
+      - name: Init Airflow DB (SQLite)
+        run: AIRFLOW_HOME=$PWD/.airflow-b .venv-mode-b/bin/airflow db migrate
+
+      - name: Compare Mode A vs Mode B (7 эталонных DAG)
+        run: |
+          uv sync --dev
+          uv run python spike/inspect_dags.py A > spike/out/mode_a.json
+          AIRFLOW_HOME=$PWD/.airflow-b .venv-mode-b/bin/python spike/inspect_dags.py B > spike/out/mode_b.json
+          .venv/bin/python spike/compare.py
+
+      - name: "A/B статусы прогона (Срез 7: branch + trigger_rule)"
+        run: |
+          uv run python spike/run_ab.py A > spike/out/run_a.json
+          AIRFLOW_HOME=$PWD/.airflow-b AIRFLOW__CORE__DAGS_FOLDER=$PWD/spike/ab_dags \
+            .venv-mode-b/bin/python spike/run_ab.py B > spike/out/run_b.json
+          uv run python spike/run_ab.py compare

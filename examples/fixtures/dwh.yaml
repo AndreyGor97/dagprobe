@@ -1,0 +1,17 @@
+# Фикстуры для examples/dags/db_join.py — уровень Emulated Engine (§8.2).
+# tables → in-memory SQLite: SQL исполняется движком (JOIN/GROUP BY/HAVING).
+# Уровень Fake (заранее заданный ответ, SQL не исполняется) — ключ `rows`:
+#   conns: {dwh: {conn_type: postgres, rows: [{amount: 10}]}}
+conns:
+  dwh:
+    conn_type: postgres
+    tables:
+      customers:
+        - {customer_id: 10, name: Alice}
+        - {customer_id: 20, name: Bob}
+        - {customer_id: 30, name: Carol}
+      orders:
+        - {order_id: 1, customer_id: 10, amount: 100}
+        - {order_id: 2, customer_id: 10, amount: 5}
+        - {order_id: 3, customer_id: 20, amount: 7}
+        - {order_id: 4, customer_id: 30, amount: -3}

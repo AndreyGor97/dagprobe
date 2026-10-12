@@ -1,0 +1,51 @@
+# DAGProbe в CI (§6.21): шаблон GitHub Actions.
+# Копируется в <ваш-репозиторий>/.github/workflows/dagprobe.yml и правится
+# только --dags-folder (каталог с DAG'ами) и база diff.
+#
+# Поведение: линтуются и импортируются только изменённые в PR файлы; ошибки
+# роняют джобу (exit 1 — шаг падает), рядом падает отчёт JUnit в PR.
+# Уровень, который роняет мердж, настраивается --fail-on error|warning|never.
+name: dagprobe
+
+on: pull_request
+
+jobs:
+  dags:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # нужен diff к базовой ветке для --changed-only
+
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --frozen
+
+      # exit 1 при находках уровня gate: джоба падает, мердж не проходит
+      - name: Линт изменённых DAG
+        run: |
+          uv run dagprobe lint --dags-folder dags --changed-only \
+            --base-ref "origin/${{ github.base_ref }}" --format junit \
+            > dagprobe-lint.xml
+
+      # отчёт в PR — даже когда шаг выше упал (файл уже записан)
+      - name: Отчёт в PR
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: dagprobe lint
+          path: dagprobe-lint.xml
+          reporter: java-junit
+
+      # прогон DAG на фикстурах: те же exit-коды и тот же JUnit
+      - name: Прогон DAG на фикстурах
+        run: |
+          uv run dagprobe run --dags-folder examples/dags --dag-id db_join_etl \
+            --fixtures examples/fixtures/dwh.yaml --format junit > dagprobe-run.xml
+
+      - name: Отчёт по прогону
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: dagprobe run
+          path: dagprobe-run.xml
+          reporter: java-junit

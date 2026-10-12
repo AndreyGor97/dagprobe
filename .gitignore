@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual envs
+.venv/
+venv/
+env/
+# Windows-окружение рядом с linux-venv песочницы (на хосте .venv занят линуксовым, см. HANDOFF «Уроки»)
+.venv-win/
+
+# uv
+.uv/
+
+# Editors / IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+# артефакты сравнения A/B — генерятся spike/inspect_dags.py и CI
+spike/out/
+.coverage
+# артефакты A/B статусов — генерятся spike/run_ab.py
+spike/ab_dags/

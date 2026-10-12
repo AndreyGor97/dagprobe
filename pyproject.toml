@@ -1,0 +1,82 @@
+[project]
+name = "dagprobe"
+version = "0.1.0"
+description = "Debug and test Apache Airflow DAGs without installing and running Airflow"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "AndreyGor97" }]
+keywords = ["airflow", "apache-airflow", "dag", "testing", "lint", "ci", "migration"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
+]
+
+dependencies = [
+    "jinja2>=3.1",  # тот же движок шаблонов, что у Airflow — рендер сравним 1:1
+    "pandas>=2.2",
+    "pyyaml>=6.0.3",
+]
+[project.urls]
+Homepage = "https://github.com/AndreyGor97/dagprobe"
+Repository = "https://github.com/AndreyGor97/dagprobe"
+Issues = "https://github.com/AndreyGor97/dagprobe/issues"
+
+[project.scripts]
+dagprobe = "dagprobe.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dagprobe"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/tests", "/examples", "/README.md", "/LICENSE"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+extend-exclude = [
+    "spike/dags",                                    # вендорные эталонные DAG Apache — не переформатируем
+    "src/dagprobe/shim/airflow/example_dags",        # вендорный workday.py — не переформатируем
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]  # pycodestyle, pyflakes, isort, pyupgrade, bugbear, simplify
+
+[tool.mypy]
+strict = true
+python_version = "3.11"          # проверяем нижнюю планку requires-python
+mypy_path = "src"
+exclude = "src/dagprobe/shim/airflow/example_dags"  # вендорный workday.py (Apache)
+
+# pandas идёт без типов (py.typed в 3.0.x нет); используем его только динамически —
+# обёртки патча и DataFrame(rows), стабы сюда ничего не добавят
+[[tool.mypy.overrides]]
+module = ["pandas", "pandas.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=dagprobe --cov-report=term-missing"
+
+[dependency-groups]
+dev = [
+    "mypy>=2.3.1",
+    "pendulum>=3.2.0",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.16.9",
+    "types-pyyaml>=6.0.12.20260906",
+]
