@@ -58,7 +58,7 @@ def rule_deprecated_api(_path: Path, tree: ast.Module) -> list[DAGProbeError]:
                 DAGProbeError(
                     code=DEPRECATED_API,
                     severity=WARNING,
-                    message=f"{node.arg}= устарел с {since}; используй {new}=",
+                    message=f"{node.arg}= is deprecated since {since}; use {new}=",
                     line=node.lineno,
                 )
             )
@@ -83,8 +83,8 @@ def rule_nondeterministic_time(_path: Path, tree: ast.Module) -> list[DAGProbeEr
                 DAGProbeError(
                     code=NONDETERMINISTIC_TIME,
                     severity=WARNING,
-                    message=f".{node.func.attr}() в коде DAG — недетерминированное время; "
-                    "используй airflow.utils.dates.days_ago или фиксированный start_date",
+                    message=f".{node.func.attr}() in DAG code is non-deterministic; "
+                    "use airflow.utils.dates.days_ago or a fixed start_date",
                     line=node.lineno,
                 )
             )
@@ -106,7 +106,7 @@ def rule_implicit_catchup(_path: Path, tree: ast.Module) -> list[DAGProbeError]:
                     DAGProbeError(
                         code=IMPLICIT_CATCHUP,
                         severity=WARNING,
-                        message="DAG без явного catchup= — риск backfill-взрыва при старом start_date",  # noqa: E501
+                        message="DAG without explicit catchup= — backfill explosion risk with an old start_date",  # noqa: E501
                         line=node.lineno,
                     )
                 )

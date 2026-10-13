@@ -61,7 +61,7 @@ def test_profile_v3_has_no_legacy_keys() -> None:
     ctx = _templates.build_context(task, LD)  # type: ignore[arg-type]
     assert "execution_date" not in ctx
     assert "tomorrow_ds" not in ctx
-    with pytest.raises(ValueError, match="неизвестный профиль"):
+    with pytest.raises(ValueError, match="unknown profile"):
         _templates.build_context(task, LD, "2.11")  # type: ignore[arg-type]
 
 

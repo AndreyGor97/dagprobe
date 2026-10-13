@@ -112,7 +112,7 @@ def test_fixtures_reject_rows_and_tables_together(tmp_path: Path) -> None:
     f.write_text(
         "conns:\n  dwh:\n    rows: [{a: 1}]\n    tables:\n      t: [{a: 1}]\n", encoding="utf-8"
     )
-    with pytest.raises(ValueError, match="не оба сразу"):
+    with pytest.raises(ValueError, match="not both"):
         Fixtures.load(f)
 
 

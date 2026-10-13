@@ -62,11 +62,11 @@ def _run_mapped(task, args, kwargs):
     mapped = {k[9:]: v for k, v in kwargs.items() if k.startswith("__mapped_")}
     static = {k: v for k, v in kwargs.items() if not k.startswith("__mapped_")}
     if not mapped:
-        raise ValueError(f"mapped-задача {task.task_id!r} без expand-аргументов")
+        raise ValueError(f"mapped task {task.task_id!r} has no expand arguments")
     lengths = {len(v) for v in mapped.values()}
     if len(lengths) > 1:
         raise ValueError(
-            f"task {task.task_id!r}: expand-аргументы разной длины {sorted(lengths)}"
+            f"task {task.task_id!r}: expand arguments have different lengths {sorted(lengths)}"
         )
     results = []
     for i in range(lengths.pop()):
@@ -223,8 +223,8 @@ def branch_targets(task: Any, result: Any) -> tuple[list[str], list[str]]:
     for c in chosen:
         if c not in downs:
             msg = (
-                f"BranchPythonOperator {task.task_id!r}: вернул {c!r}, "
-                f"но это не downstream-задача (downstream: {sorted(downs)})"
+                f"BranchPythonOperator {task.task_id!r}: returned {c!r}, "
+                f"which is not a downstream task (downstream: {sorted(downs)})"
             )
             raise ValueError(msg)
     return chosen, sorted(downs - set(chosen))
@@ -270,7 +270,7 @@ def trigger_rule_decide(rule: str, ups: list[str]) -> str:
         if k:
             return "skipped"  # скипнутые не считаются «done» для этого правила
         return "run" if s >= 1 else "upstream_failed"
-    msg = f"неизвестный trigger_rule {rule!r} — Airflow такой не знает (опечатка?)"
+    msg = f"unknown trigger_rule {rule!r} — Airflow does not know it (typo?)"
     raise ValueError(msg)
 
 
@@ -311,7 +311,7 @@ def run_dag(
     )
     run = run_child(_RUN_CHILD, [str(file), cfg], timeout_s=timeout_s)
     if run.payload is None:
-        msg = f"таймаут {timeout_s:.0f} с прогона {dag_id}"
+        msg = f"timeout after {timeout_s:.0f}s running {dag_id}"
         raise (TimeoutError(msg) if run.timed_out else RuntimeError(run.diagnostics))
     data = run.payload
     return TaskRunResult(

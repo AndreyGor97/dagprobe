@@ -23,5 +23,5 @@ def __getattr__(name: str) -> Any:
     if name in _LAZY:
         module_name, attr = _LAZY[name]
         return getattr(importlib.import_module(module_name), attr)
-    msg = f"shim airflow: {name!r} ещё не покрыт (добавляй по мере требования DAG, файл 18 B3–B5)"
+    msg = f"shim airflow: {name!r} is not implemented yet"
     raise AttributeError(msg)

@@ -48,7 +48,7 @@ class TaskFactory:
         def call(*args: Any, **kwargs: Any) -> XComArg:
             dag = _core.current_dag()
             if dag is None:
-                msg = f"@task {fn.__name__!r} вызван вне контекста DAG"
+                msg = f"@task {fn.__name__!r} called outside a DAG context"
                 raise RuntimeError(msg)
             task_id = opts.get("task_id", fn.__name__)
             # Регистрацию делает сам BaseOperator.__init__ (через _current_dag) — не дублируем.
@@ -134,7 +134,7 @@ def task_group_factory(fn: Callable[..., Any]) -> Callable[..., Any]:
     def call(*args: Any, **kwargs: Any) -> Any:
         dag = _core.current_dag()
         if dag is None:
-            msg = f"@task_group {fn.__name__!r} вызван вне контекста DAG"
+            msg = f"@task_group {fn.__name__!r} called outside a DAG context"
             raise RuntimeError(msg)
         with TaskGroup(fn.__name__):
             result = fn(*args, **kwargs)

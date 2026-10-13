@@ -40,7 +40,7 @@ def clear_fixtures() -> None:
 def fixtures() -> Fixtures:
     fx: Fixtures | None = getattr(_local, "fixtures", None)
     if fx is None:
-        msg = "нет активных фикстур — прогон должен задать их явно (set_fixtures)"
+        msg = "no active fixtures — the run must set them explicitly (set_fixtures)"
         raise FixtureNotFound(msg)
     return fx
 
@@ -59,8 +59,8 @@ def emulated_connection(conn_id: str) -> sqlite3.Connection:
         conn = fixtures().get(conn_id)
         if not isinstance(conn, EmulatedConn):  # защита от прямого вызова мимо хука
             msg = (
-                f"conn_id={conn_id!r} — это Fake-фикстура (rows); "
-                f"Emulated Engine (§8.2) требует tables"
+                f"conn_id={conn_id!r} is a Fake fixture (rows); "
+                f"Emulated Engine (§8.2) requires tables"
             )
             raise ValueError(msg)
         con = cache[conn_id] = conn.connect()

@@ -71,7 +71,7 @@ def run_cases(dag_id: str, statuses: dict[str, str], failures: dict[str, str]) -
                 DAGProbeError(
                     code=UPSTREAM_FAILED,
                     severity=ERROR,
-                    message="триггер-правило не выполнено: upstream пропущен или упал",
+                    message="trigger rule not satisfied: upstream skipped or failed",
                     file=task_id,
                 )
             ]
@@ -132,7 +132,7 @@ def to_junit(cases: Iterable[Case], *, time_s: float = 0.0) -> str:
 def changed_python_files(dags_folder: Path, base_ref: str) -> list[Path]:
     """`*.py` из diff к базовой ветке (§6.21) — режим «только изменённые файлы»."""
     if not dags_folder.is_dir():
-        raise CiError(f"каталог DAG не найден: {dags_folder}")
+        raise CiError(f"DAGs folder not found: {dags_folder}")
     root = Path(_git("rev-parse", "--show-toplevel", cwd=dags_folder).strip())
     folder = dags_folder.resolve()
     out: list[Path] = []
@@ -149,7 +149,7 @@ def _git(*args: str, cwd: Path | None = None) -> str:
     try:
         proc = subprocess.run(("git", *args), cwd=cwd, capture_output=True, text=True, check=False)
     except FileNotFoundError as exc:  # git не установлен
-        raise CiError("git не найден — режим --changed-only недоступен") from exc
+        raise CiError("git not found — --changed-only is unavailable") from exc
     if proc.returncode != 0:
         detail = proc.stderr.strip() or proc.stdout.strip()
         raise CiError(f"git {' '.join(args)}: {detail}")

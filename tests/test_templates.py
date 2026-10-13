@@ -93,7 +93,7 @@ def test_uncovered_macro_fails_loud() -> None:
     try:
         _render("{{ macros.datetime_diff_for_humans(ds) }}")
     except Exception as exc:  # noqa: BLE001 — jinja заворачивает в TemplateRuntimeError
-        assert "не покрыт" in str(exc) or "datetime_diff_for_humans" in str(exc)
+        assert "not implemented" in str(exc) or "datetime_diff_for_humans" in str(exc)
     else:
         raise AssertionError("непокрытый макрос должен падать громко")
 

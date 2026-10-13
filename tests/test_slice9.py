@@ -38,5 +38,5 @@ def test_xcom_string_task_ids_no_finding() -> None:
 
 
 def test_get_current_context_loud_outside_run() -> None:
-    with pytest.raises(RuntimeError, match="внутри исполнения"):
+    with pytest.raises(RuntimeError, match="inside task execution"):
         get_current_context()

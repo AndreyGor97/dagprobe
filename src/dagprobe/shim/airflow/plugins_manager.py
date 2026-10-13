@@ -16,5 +16,5 @@ __all__ = ["AirflowPlugin"]
 
 
 def __getattr__(name: str) -> Any:
-    msg = f"shim airflow.plugins_manager: {name!r} ещё не покрыт (файл 18, B3–B5)"
+    msg = f"shim airflow.plugins_manager: {name!r} is not implemented yet"
     raise AttributeError(msg)

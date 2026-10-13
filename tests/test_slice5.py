@@ -149,7 +149,7 @@ def test_path_outside_rules_is_loud(tmp_path: Path) -> None:
     fixture = FIXTURES_YAML.replace("*.csv", "*.parquet")
     result = _run(tmp_path, "read_csv", READ_DAG, fixture)
     assert result.statuses["top"] == "failed"
-    assert "не подчиняется фикстурам" in result.failures["top"]
+    assert "not covered by files: fixtures" in result.failures["top"]
 
 
 def test_windows_backslash_path_matches_full_pattern(tmp_path: Path) -> None:
@@ -187,7 +187,7 @@ def test_encoding_is_declared_and_honoured(
 def test_csv_without_encoding_is_loud(tmp_path: Path) -> None:
     """Фикстура без encoding — ошибка загрузки, а не молчаливое угадывание (§8.7)."""
     fixture = _fixtures(tmp_path, 'files:\n  - match: {path_glob: "*.csv"}\n    csv: "a\\n1\\n"\n')
-    with pytest.raises(ValueError, match="кодировк"):
+    with pytest.raises(ValueError, match="encoding"):
         Fixtures.load(fixture)
 
 

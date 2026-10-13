@@ -66,7 +66,7 @@ class BaseOperator:
             setattr(self, key, value)  # default_args и явные аргументы — как атрибуты
         target = dag if dag is not None else _current_dag
         if target is None:
-            msg = f"Operator {task_id!r} создан вне контекста DAG"
+            msg = f"Operator {task_id!r} created outside a DAG context"
             raise RuntimeError(msg)
         self.dag = target
         target.add_task(self)
@@ -103,7 +103,7 @@ class BaseOperator:
     def _assert_operator(self, op: object) -> None:
         if not isinstance(op, BaseOperator):
             msg = (
-                f"Операнд >>/<< должен быть оператором или их списком, получен {type(op).__name__}"
+                f">>/< operand must be an operator or a list of operators, got {type(op).__name__}"
             )
             raise TypeError(msg)
 
@@ -152,7 +152,7 @@ class DAG:
 
     def add_task(self, task: BaseOperator) -> None:
         if task.task_id in self.task_dict:
-            msg = f"Duplicate task_id {task.task_id!r} в DAG {self.dag_id!r}"
+            msg = f"Duplicate task_id {task.task_id!r} in DAG {self.dag_id!r}"
             raise ValueError(msg)
         self.task_dict[task.task_id] = task
 

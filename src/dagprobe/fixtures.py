@@ -106,8 +106,8 @@ class Fixtures:
             has_rows, has_tables = "rows" in v, "tables" in v
             if has_rows and has_tables:
                 msg = (
-                    f"фикстура {cid!r}: задай либо rows (Fake), либо tables "
-                    f"(Emulated Engine §8.2), не оба сразу"
+                    f"fixture {cid!r}: set either rows (Fake) or tables "
+                    f"(Emulated Engine §8.2), not both"
                 )
                 raise ValueError(msg)
             if has_tables:
@@ -129,20 +129,20 @@ class Fixtures:
             v = item or {}
             glob = str((v.get("match") or {}).get("path_glob") or "")
             if not glob:
-                msg = f"files[{i}]: нужен match.path_glob (§8.7) — по какому пути подставлять"
+                msg = f"files[{i}]: match.path_glob is required (§8.7) — which path to stub"
                 raise ValueError(msg)
             has_rows, has_csv = "rows" in v, "csv" in v
             if has_rows == has_csv:
                 msg = (
-                    f"files[{i}] ({glob}): задай ровно одно — rows (готовый DataFrame) "
-                    f"или csv (сырой текст файла)"
+                    f"files[{i}] ({glob}): set exactly one — rows (ready DataFrame) "
+                    f"or csv (raw file text)"
                 )
                 raise ValueError(msg)
             encoding = v.get("encoding")
             if has_csv and not encoding:
                 msg = (
-                    f"files[{i}] ({glob}): csv без encoding — §8.7 требует объявлять "
-                    f"кодировку явно, иначе порча данных угадывается молча"
+                    f"files[{i}] ({glob}): csv without encoding — §8.7 requires an "
+                    f"explicit encoding, otherwise data corruption is guessed silently"
                 )
                 raise ValueError(msg)
             rules.append(
@@ -159,7 +159,7 @@ class Fixtures:
         try:
             return self.conns[conn_id]
         except KeyError:
-            msg = f"нет фикстуры для conn_id={conn_id!r} (FixtureNotFound)"
+            msg = f"no fixture for conn_id={conn_id!r} (FixtureNotFound)"
             raise FixtureNotFound(msg) from None
 
 

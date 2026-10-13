@@ -32,5 +32,5 @@ def dag(**dag_kwargs: Any) -> Callable[[Callable[..., Any]], Callable[..., Any]]
 
 
 def __getattr__(name: str) -> Any:
-    msg = f"shim airflow.sdk: {name!r} ещё не покрыт (добавь по мере требования DAG, файл 18 B3–B5)"
+    msg = f"shim airflow.sdk: {name!r} is not implemented yet"
     raise AttributeError(msg)

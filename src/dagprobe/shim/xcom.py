@@ -47,7 +47,7 @@ class XCom:
         run_id = self._active_run()
         with self._lock:
             if (run_id, task_id, key) not in self._store:
-                msg = f"XCom {task_id!r}/{key!r} не найден в прогоне {run_id!r}"
+                msg = f"XCom {task_id!r}/{key!r} not found in run {run_id!r}"
                 raise KeyError(msg)
             return self._store[(run_id, task_id, key)]
 
@@ -61,7 +61,7 @@ class XCom:
     def _active_run(self) -> str:
         run_id = RunContext.current_run_id()
         if run_id is None:
-            msg = "XCom доступ вне активного RunContext"
+            msg = "XCom accessed outside an active RunContext"
             raise RuntimeError(msg)
         return run_id
 

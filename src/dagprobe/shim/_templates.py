@@ -95,7 +95,7 @@ class Macros:
         try:
             return self._names[item]
         except KeyError:
-            msg = f"макрос macros.{item} не покрыт шимом — добавьте в Macros._names"
+            msg = f"macro macros.{item} is not implemented by the shim — add it to Macros._names"
             raise AttributeError(msg) from None
 
 
@@ -154,7 +154,7 @@ def get_current_context() -> dict[str, Any]:
     """Как ``airflow.operators.python.get_current_context``; вне прогона — громко."""
     ctx = _cv.get()
     if ctx is None:
-        msg = "контекст доступен только внутри исполнения задачи прогона"
+        msg = "context is only available inside task execution of a run"
         raise RuntimeError(msg)
     return ctx
 
@@ -202,7 +202,7 @@ def build_context(task: Any, logical_date: datetime, profile: str = "3.3") -> di
             }
         )
     elif profile != "3.3":
-        msg = f"неизвестный профиль {profile!r} (есть: 2.10, 3.3)"
+        msg = f"unknown profile {profile!r} (known: 2.10, 3.3)"
         raise ValueError(msg)
     return ctx
 

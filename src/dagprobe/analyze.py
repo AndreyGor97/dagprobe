@@ -187,7 +187,9 @@ def run_child(child_src: str, args: list[str], *, timeout_s: float = TIMEOUT_S) 
                 cmd, capture_output=True, text=True, timeout=timeout_s, check=False
             )
         except subprocess.TimeoutExpired:
-            return ChildRun(payload=None, timed_out=True, diagnostics=f"таймаут {timeout_s:.0f} с")
+            return ChildRun(
+                payload=None, timed_out=True, diagnostics=f"timeout after {timeout_s:.0f}s"
+            )
         if out.exists() and out.stat().st_size:
             return ChildRun(
                 payload=cast("dict[str, object]", json.loads(out.read_text(encoding="utf-8"))),
@@ -224,7 +226,7 @@ def analyze_file(
     if run.payload is None:
         code = errors.SANDBOX_TIMEOUT if run.timed_out else errors.IMPORT_FAILURE
         message = (
-            f"таймаут {timeout_s:.0f} с при импорте {file.name}"
+            f"timeout after {timeout_s:.0f}s importing {file.name}"
             if run.timed_out
             else run.diagnostics
         )

@@ -182,7 +182,7 @@ def test_trigger_rule_table(rule: str, ups: list[str], expected: str) -> None:
 
 
 def test_trigger_rule_unknown_is_loud() -> None:
-    with pytest.raises(ValueError, match="неизвестный trigger_rule"):
+    with pytest.raises(ValueError, match="unknown trigger_rule"):
         trigger_rule_decide("all_sucess", ["ok"])  # опечатка
 
 
@@ -194,7 +194,7 @@ def test_branch_targets_parsing() -> None:
     assert branch_targets(FakeTask(), "a") == (["a"], ["b"])
     assert branch_targets(FakeTask(), None) == ([], ["a", "b"])  # None → все skipped
     assert branch_targets(FakeTask(), ["a", "b"]) == (["a", "b"], [])
-    with pytest.raises(ValueError, match="downstream-задача"):
+    with pytest.raises(ValueError, match="downstream task"):
         branch_targets(FakeTask(), "c")
 
 
@@ -237,14 +237,14 @@ def test_branch_wrong_task_is_loud(tmp_path: Path) -> None:
     dags, fx = _setup(tmp_path)
     run = run_dag(dags / "dags.py", "branch_wrong", fixtures_path=fx)
     assert run.statuses["route"] == "failed"
-    assert "downstream-задача" in run.failures["route"]
+    assert "downstream task" in run.failures["route"]
 
 
 def test_insert_rows_on_fake_fixture_is_loud(tmp_path: Path) -> None:
     dags, fx = _setup(tmp_path)
     run = run_dag(dags / "dags.py", "insert_fake", fixtures_path=fx)
     assert run.statuses["ins"] == "failed"
-    assert "Fake-фикстура" in run.failures["ins"]
+    assert "Fake fixture" in run.failures["ins"]
 
 
 def test_run_cli_upstream_failed_fails_ci(

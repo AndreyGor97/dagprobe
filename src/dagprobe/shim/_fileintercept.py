@@ -123,8 +123,8 @@ def _stub(path: Any) -> FileRule:
     if rule is None:
         listed = ", ".join(r.path_glob for r in rules)
         msg = (
-            f"путь {path!s} не подчиняется фикстурам files: ({listed}); "
-            f"реальную ФС прогон не читает и не пишет (§8.6) — добавь правило в фикстуру"
+            f"path {path!s} is not covered by files: fixtures ({listed}); "
+            f"the run never touches the real filesystem (§8.6) — add a rule to the fixture"
         )
         raise FileNotStubbed(msg)
     return rule
