@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import jinja2.sandbox
+from jinja2 import StrictUndefined
 from jinja2.sandbox import SandboxedEnvironment
 
 
@@ -65,7 +66,10 @@ class _AirflowEnvironment(SandboxedEnvironment):
     """Как ``airflow...templater.SandboxedEnvironment``: фильтры + доступ к ``_attr``."""
 
     def __init__(self, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
+        # StrictUndefined — как airflow sdk templater (templater.py:381):
+        # отсутствующий ключ контекста — громкий UndefinedError, не тихий рендер
+        # в пусто (зонд Срез 18 против живого 3.3.2: {{ prev_ds }} → задача failed)
+        super().__init__(undefined=StrictUndefined, **kwargs)
         self.filters.update(FILTERS)
 
     def is_safe_attribute(self, obj: Any, attr: str, value: Any) -> bool:
@@ -102,11 +106,13 @@ class Macros:
 class _Ti:
     """``ti``/``task_instance`` в контексте: ``xcom_pull`` с версионной семантикой.
 
-    Срез 9 (G2 #1–#2): ``task_ids=None`` — в 2.x последний XCom всего dag-run,
-    в 3.x — только текущая задача (типично None); ``task_ids=["t"]`` (один
-    элемент) — в 2.x список, в 3.x само значение (#49540). Отсутствующий XCom —
-    None (как в Airflow), не громкая ошибка: тишину тут ловит сам ``audit``,
-    сравнивая профили.
+    Срез 9 (G2 #1): ``task_ids=None`` — в 2.x последний XCom всего dag-run,
+    в 3.x — только текущая задача (типично None). Списковый/строковый ``task_ids``
+    — одинаково в обеих версиях: список → список значений, строка → значение
+    (поправка Среза 17, 13.10: живой A/B против 3.3.2 опроверг #49540 —
+    ``['t']`` из одного элемента тоже даёт список, а не само значение).
+    Отсутствующий XCom — None (как в Airflow), не громкая ошибка: тишину тут
+    ловит сам ``audit``, сравнивая профили.
     """
 
     def __init__(self, task: Any, profile: str) -> None:
@@ -132,8 +138,6 @@ class _Ti:
             if self._profile == "2.10":
                 return store.latest(key)  # весь dag-run, последний по записи
             return one(self._task_id)  # 3.x: только текущая задача
-        if self._profile == "3.3" and len(task_ids) == 1:
-            return one(task_ids[0])
         return [one(t) for t in task_ids]
 
 
@@ -164,10 +168,13 @@ def build_context(task: Any, logical_date: datetime, profile: str = "3.3") -> di
 
     Профиль версии (Срез 8): ``"3.3"`` — текущий контекст Airflow 3;
     ``"2.10"`` добавляет легаси-ключи из 2.x — ``execution_date``,
-    ``tomorrow_ds``/``yesterday_ds`` (и nododash-варианты). ``prev_ds``/``next_ds``
-    НЕ эмулируются даже в 2.10: их значения зависят от расписания (timetable),
-    а угаданное значение — тихая ложь; шаблон с ними отрендерится в пусто
-    в обоих профилях и найдку не создаст.
+    ``tomorrow_ds``/``yesterday_ds`` (и nododash-варианты), а также
+    ``prev_ds``/``next_ds`` (Срез 18) через timetable-эмуляцию расписания
+    (``_timetable.prev_next``): расписание известно → честный расчёт,
+    отсутствует (``None``/``@once``) → пустые строки (как 2.x), неизвестный
+    вид → громкий ``ValueError``. В профиле ``"3.3"`` этих ключей нет —
+    рендер ``{{ prev_ds }}`` громко падает UndefinedError (StrictUndefined),
+    как живой 3.3.2 (зонд Срез 18).
 
     ponytail: ``var``/``conn`` не входят — это L1-фикстуры (Срез 2+); шаблон с
     ``{{ var.value.x }}`` падает громкой ошибкой Jinja, а не тихо рендерится.
@@ -190,6 +197,9 @@ def build_context(task: Any, logical_date: datetime, profile: str = "3.3") -> di
         "task_instance": _Ti(task, profile),
     }
     if profile == "2.10":
+        from dagprobe.shim import _timetable
+
+        prev_dt, next_dt = _timetable.prev_next(logical_date, getattr(task.dag, "schedule", None))
         yesterday = ds_add(ds, -1)
         tomorrow = ds_add(ds, 1)
         ctx.update(
@@ -199,6 +209,13 @@ def build_context(task: Any, logical_date: datetime, profile: str = "3.3") -> di
                 "yesterday_ds_nodash": yesterday.replace("-", ""),
                 "tomorrow_ds": tomorrow,
                 "tomorrow_ds_nodash": tomorrow.replace("-", ""),
+                # легаси prev/next (2.x): None при отсутствии расписания (jinja → 'None')
+                "prev_execution_date": prev_dt.replace(tzinfo=None) if prev_dt else None,
+                "next_execution_date": next_dt.replace(tzinfo=None) if next_dt else None,
+                "prev_ds": prev_dt.strftime("%Y-%m-%d") if prev_dt else None,
+                "prev_ds_nodash": prev_dt.strftime("%Y%m%d") if prev_dt else None,
+                "next_ds": next_dt.strftime("%Y-%m-%d") if next_dt else None,
+                "next_ds_nodash": next_dt.strftime("%Y%m%d") if next_dt else None,
             }
         )
     elif profile != "3.3":

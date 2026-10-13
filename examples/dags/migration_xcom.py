@@ -3,8 +3,9 @@
 Самый сильный сигнал спроса из G2 (apache/airflow#51821): после апгрейда сотни
 DAG-ов молча сломались, потому что ``xcom_pull(task_ids=None)`` в 3.x берёт
 XCom только текущей задачи (типично — None), а не всего dag-run, как в 2.x.
-``xcom_pull(task_ids=["t"])`` (список из одного) в 3.x возвращает само
-значение, а не список (#49540).
+Поправка Среза 17 (13.10, живой A/B против 3.3.2): списковый ``task_ids``,
+включая один элемент, возвращает список в ОБОИХ версиях — #49540 живым
+эталоном не подтвердился, находки тут нет (контроль одинаковости).
 
 Запуск из клона DagProbe:
 
@@ -31,7 +32,7 @@ def pull_none():
 def pull_single_list():
     ti = get_current_context()["ti"]
     r = ti.xcom_pull(task_ids=["pusher"])
-    return "list" if isinstance(r, list) else "value"  # 2.x: list, 3.x: само значение
+    return "list" if isinstance(r, list) else "value"  # обе версии: список (A/B 13.10)
 
 
 def pull_string():

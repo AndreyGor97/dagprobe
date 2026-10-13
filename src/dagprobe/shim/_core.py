@@ -53,12 +53,14 @@ class BaseOperator:
     upstream_task_ids: set[str]
     downstream_task_ids: set[str]
     template_fields: tuple[str, ...] = ()
+    mapped: bool  # Dynamic Task Mapping (только через .partial().expand() / TaskFlow)
 
     def __init__(self, task_id: str, dag: DAG | None = None, **kwargs: Any) -> None:
         group = current_group()
         if group is not None:
             task_id = f"{group.group_id}.{task_id}"  # как в Airflow: «op.add_1»
         self.task_id = task_id
+        self.mapped = False
         self.upstream_task_ids = set()
         self.downstream_task_ids = set()
         self.params: dict[str, Any] = {}
@@ -77,6 +79,13 @@ class BaseOperator:
         from dagprobe.shim._taskflow import XComArg
 
         return XComArg(self)
+
+    @classmethod
+    def partial(cls, **kwargs: Any) -> Any:
+        """``PythonOperator.partial(...)`` — static-kwargs + ``.expand()`` (как в Airflow)."""
+        from dagprobe.shim._taskflow import OperatorPartial
+
+        return OperatorPartial(cls, kwargs)
 
     # -- зависимости: t1 >> t2 / t1 >> [t2, t3] / t2 << t1 ------------------
     def __rshift__(self, other: OperatorArg) -> OperatorArg:

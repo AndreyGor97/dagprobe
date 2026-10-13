@@ -61,6 +61,7 @@ class TaskFactory:
             return XComArg(task)
 
         call.expand = _Expand(call)  # type: ignore[attr-defined]
+        call.expand_kwargs = _ExpandKwargs(call)  # type: ignore[attr-defined]
         return call
 
     @property
@@ -82,10 +83,54 @@ class _Expand:
         return handle
 
 
+class _ExpandKwargs:
+    """``add_one.expand_kwargs([{"x": 1}, {"x": 2}])`` — каждый dict раскрутка со своими kwargs."""
+
+    def __init__(self, call: Callable[..., XComArg]) -> None:
+        self._call = call
+
+    def __call__(self, kwargs_list: Any) -> XComArg:
+        if not isinstance(kwargs_list, XComArg):
+            for item in kwargs_list:
+                if not isinstance(item, dict):
+                    msg = (
+                        "expand_kwargs expects a list of dicts "
+                        f"(or an XComArg resolving to one), got {type(item).__name__}"
+                    )
+                    raise ValueError(msg)
+        handle = self._call(__expand_kwargs__=kwargs_list)
+        _mark_mapped(handle)
+        if not isinstance(kwargs_list, XComArg):
+            for item in kwargs_list:  # значения-dict могут тянуть XComArg → рёбра
+                for value in item.values():
+                    _wire_arg(handle.task, value)
+        return handle
+
+
+class OperatorPartial:
+    """``PythonOperator.partial(...)``: static-kwargs класса + ``.expand()``/``.expand_kwargs()``.
+
+    Раскрытие — теми же правилами, что у TaskFlow: runtime читает ``__mapped_``-ключи
+    /``__expand_kwargs__`` из ``op_kwargs`` (движок прогона один на оба механизма).
+    """
+
+    def __init__(self, op_class: type, kwargs: dict[str, Any]) -> None:
+        self._op_class = op_class
+        self._kwargs = kwargs
+        # те же механизмы раскрытия, что у TaskFlow — фабрикой задач служит _make_task
+        self.expand = _Expand(self._make_task)
+        self.expand_kwargs = _ExpandKwargs(self._make_task)
+
+    def _make_task(self, **mapped: Any) -> XComArg:
+        task = self._op_class(**self._kwargs)
+        task.mapped = True
+        # static op_kwargs из partial не теряются: мержатся с mapped-ключами
+        task.op_kwargs = {**(self._kwargs.get("op_kwargs") or {}), **mapped}
+        return XComArg(task)
+
+
 def _mark_mapped(handle: XComArg) -> None:
-    task = handle.task
-    assert isinstance(task, _PythonTask)
-    task.mapped = True
+    handle.task.mapped = True
 
 
 def _wire_arg(task: _core.BaseOperator, value: Any) -> None:

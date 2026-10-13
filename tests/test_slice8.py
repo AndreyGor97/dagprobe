@@ -70,14 +70,17 @@ def test_audit_finds_legacy_context_divergence(tmp_path: object) -> None:
     findings = audit_2to3(tmp_path)  # type: ignore[arg-type]
     by_task = {(f["dag_id"], f["task_id"]): f for f in findings}
 
-    # ok в 2.10, failed в 3.3 — падение рендера легаси-ключа
+    # ok в 2.10, failed в 3.3 — падение рендера легаси-ключа (Срез 18: громкий
+    # UndefinedError с именем ключа, как живой 3.3.2, вместо тихого рендера в пусто)
     st = by_task[("mig_2to3", "uses_execution_date")]
     assert st["code"] == "status" and st["in_v2"] == "ok" and st["in_v3"] == "failed"
-    assert "легаси-ключ" in st["detail"]
+    assert "'execution_date' is undefined" in st["detail"]
 
-    # ok в обоих, но отрендеренное значение разное
+    # обе задачи — статусные находки (Срез 18: тихий рендер легаси-ключа в пусто
+    # заменён громким UndefinedError, находка стала status, а не value)
     val = by_task[("mig_2to3", "uses_tomorrow_ds")]
-    assert val["code"] == "value" and val["in_v2"] == "'2026-09-30'" and val["in_v3"] == "''"
+    assert val["code"] == "status" and val["in_v2"] == "ok" and val["in_v3"] == "failed"
+    assert "'tomorrow_ds' is undefined" in val["detail"]
 
     # чистый DAG — ни одной находки
     assert not [f for f in findings if f["dag_id"] == "clean_2to3"]

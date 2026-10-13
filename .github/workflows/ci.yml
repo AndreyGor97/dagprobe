@@ -7,6 +7,11 @@ on:
 jobs:
   lint-test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.13", "3.14", "3.15"]
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}  # перекрывает .python-version (3.15)
     steps:
       - uses: actions/checkout@v5
 
@@ -35,7 +40,7 @@ jobs:
 
       - name: Create Mode B venv (real Airflow 3.3.2)
         run: |
-          uv venv .venv-mode-b
+          uv venv --python 3.14 .venv-mode-b  # пин: Airflow 3.3.2 не поддерживает 3.15, эталон остаётся на 3.14
           uv pip install --python .venv-mode-b/bin/python "apache-airflow==3.3.2" \
             --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-3.3.2/constraints-3.14.txt"
 

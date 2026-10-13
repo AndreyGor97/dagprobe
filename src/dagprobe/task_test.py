@@ -57,10 +57,26 @@ def resolve(v):
 
 
 def _run_mapped(task, args, kwargs):
-    # Dynamic task mapping (.expand()): callable — раз на элемент expand-аргументов;
-    # результат задачи — список результатов раскруток (downstream видит список, как в Airflow).
-    mapped = {k[9:]: v for k, v in kwargs.items() if k.startswith("__mapped_")}
+    # Dynamic task mapping (.expand()/.expand_kwargs()): callable — раз на элемент
+    # expand-аргументов; результат задачи — список результатов раскруток
+    # (downstream видит список, как в Airflow).
+    xk = kwargs.pop("__expand_kwargs__", None)
     static = {k: v for k, v in kwargs.items() if not k.startswith("__mapped_")}
+    if xk is not None:
+        # expand_kwargs: каждый dict — полный набор kwargs одной раскрутки
+        if not isinstance(xk, list) or not all(isinstance(d, dict) for d in xk):
+            raise ValueError(
+                f"task {task.task_id!r}: expand_kwargs expects a list of dicts "
+                f"(or an XComArg resolving to one), got {type(xk).__name__}"
+            )
+        results = []
+        for i, call_kwargs in enumerate(xk):
+            try:
+                results.append(task.python_callable(*args, **{**static, **call_kwargs}))
+            except Exception as e:
+                raise RuntimeError(f"map_index={i}: {e}") from e
+        return results
+    mapped = {k[9:]: v for k, v in kwargs.items() if k.startswith("__mapped_")}
     if not mapped:
         raise ValueError(f"mapped task {task.task_id!r} has no expand arguments")
     lengths = {len(v) for v in mapped.values()}
@@ -71,6 +87,11 @@ def _run_mapped(task, args, kwargs):
     results = []
     for i in range(lengths.pop()):
         call_kwargs = {**static, **{k: v[i] for k, v in mapped.items()}}
+        inner = call_kwargs.pop("op_kwargs", None)
+        if isinstance(inner, dict):
+            # классические операторы: expand(op_kwargs=[{...}]) — dict одной раскрутки
+            # перекрывает static (как в Airflow: mapped выигрывает у partial)
+            call_kwargs.update(inner)
         try:
             results.append(task.python_callable(*args, **call_kwargs))
         except Exception as e:
@@ -134,11 +155,14 @@ try:
             if verdict != "run":
                 statuses[tid] = verdict
                 continue
-        _templates.render_template_fields(
-            task, _templates.build_context(task, logical_date, cfg.get("profile", "3.3"))
-        )
         xcom_mod.RunContext.activate(cfg["run_id"])
         try:
+            # рендер внутри RunContext (как в Airflow: template_fields рендерятся
+            # при старте задачи) — иначе xcom_pull в шаблоне громко падает;
+            # ошибка рендера → failed этой задачи, не <setup> всего прогона
+            _templates.render_template_fields(
+                task, _templates.build_context(task, logical_date, cfg.get("profile", "3.3"))
+            )
             if getattr(task, "python_callable", None) is not None:
                 # аргументы-XComArg заменяются на фактические значения XCom
                 args = [resolve(a) for a in getattr(task, "op_args", ())]

@@ -25,9 +25,9 @@ def test_xcom_none_semantics() -> None:
 
 
 def test_xcom_single_list_semantics() -> None:
-    """G2 #2: task_ids=['t'] — 2.x список, 3.x само значение."""
-    val = _findings()[("taker_list", "value")]
-    assert val["in_v2"] == "'list'" and val["in_v3"] == "'value'"
+    """G2 #2 (#49540) опровергнут живым A/B (13.10, 3.3.2): список → список в обеих версиях."""
+    fnd = audit_2to3(ETALON.parent, dag_id="migration_xcom")
+    assert not [f for f in fnd if f["task_id"] == "taker_list"]
 
 
 def test_xcom_string_task_ids_no_finding() -> None:
