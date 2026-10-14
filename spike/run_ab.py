@@ -109,6 +109,114 @@ with DAG("ab_expand", schedule=None, start_date=None, catchup=False) as dag:
     collect(double.expand(x=make()))
     collect2(double2.expand(x=make_empty()))
 """,
+    "ab_expand_kwargs": """
+from airflow.sdk import DAG, task
+
+with DAG("ab_expand_kwargs", schedule=None, start_date=None, catchup=False) as dag:
+
+    @task
+    def make() -> list[dict]:
+        return [{"x": 1, "y": 10}, {"x": 2}]
+
+    @task
+    def make_empty() -> list[dict]:
+        return []
+
+    @task
+    def add(x: int = 0, y: int = 0) -> int:
+        return x + y
+
+    @task
+    def add2(x: int = 0, y: int = 0) -> int:
+        return x + y
+
+    @task
+    def total(xs: list) -> int:
+        return sum(xs)
+
+    @task
+    def total2(xs: list) -> int:
+        return sum(xs)
+
+    total(add.expand_kwargs(make()))
+    total2(add2.expand_kwargs([{"x": 1, "y": 10}, {"x": 2}, {"y": 5}]))
+""",
+    "ab_expand_classic": """
+from airflow.providers.standard.operators.python import PythonOperator
+from airflow.sdk import DAG, task
+
+with DAG("ab_expand_classic", schedule=None, start_date=None, catchup=False) as dag:
+
+    @task
+    def make() -> list[dict]:
+        return [{"x": 1}, {"x": 2}, {"x": 3}]
+
+    def double(x):
+        return x * 2
+
+    def coll(**_):
+        return 1
+
+    d_ = PythonOperator.partial(task_id="double", python_callable=double).expand(
+        op_kwargs=make()
+    )
+    d_ >> PythonOperator(task_id="coll", python_callable=coll)
+""",
+    "ab_xcom_template": """
+from airflow.providers.standard.operators.python import PythonOperator
+from airflow.sdk import DAG
+
+with DAG("ab_xcom_template", schedule=None, start_date=None, catchup=False) as dag:
+
+    def push(**_):
+        return 42
+
+    def check_str(v, **_):
+        assert str(v) == "42", f"строковый task_ids: {v!r}"
+
+    def check_list(v, **_):
+        assert str(v) == "[42]", f"списковый task_ids из одного: {v!r}"
+
+    def check_missing(v, **_):
+        assert v == "None", f"отсутствующий XCom: {v!r}"
+
+    p = PythonOperator(task_id="push", python_callable=push)
+    s = PythonOperator(
+        task_id="check_str", python_callable=check_str,
+        op_args=["{{ ti.xcom_pull(task_ids='push') }}"],
+    )
+    c = PythonOperator(
+        task_id="check_list", python_callable=check_list,
+        op_args=["{{ ti.xcom_pull(task_ids=['push']) }}"],
+    )
+    m = PythonOperator(
+        task_id="check_missing", python_callable=check_missing,
+        op_args=["{{ ti.xcom_pull(task_ids='nope') }}"],
+    )
+    p >> [s, c, m]
+""",
+    # Срез 18: prev_ds в 3.x отсутствует — шаблон обязан громко падать в обоих
+    # режимах (StrictUndefined), чистая задача — работать; расписание @daily,
+    # чтобы подтвердить: ключей нет даже при известном расписании
+    "ab_prev_ds": """
+from airflow.providers.standard.operators.python import PythonOperator
+from airflow.sdk import DAG
+
+with DAG("ab_prev_ds", schedule="@daily", start_date=None, catchup=False) as dag:
+
+    def echo(v, **_):
+        return v
+
+    def plain(**_):
+        return "ok"
+
+    bad = PythonOperator(
+        task_id="uses_prev_ds", python_callable=echo,
+        op_args=["{{ prev_ds }}|{{ next_ds }}"],
+    )
+    # без ребра: plain должен success даже при failed соседа (проверка чистого прогона)
+    PythonOperator(task_id="plain", python_callable=plain)
+""",
 }
 
 # статус shim → состояние Airflow

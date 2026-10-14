@@ -25,6 +25,7 @@ IMPLICIT_CATCHUP = "IMPLICIT_CATCHUP"
 SENSOR_NO_TIMEOUT = "SENSOR_NO_TIMEOUT"
 TASK_FAILURE = "TASK_FAILURE"  # провал задачи в прогоне (Срез 6: CI-форматы)
 UPSTREAM_FAILED = "UPSTREAM_FAILED"  # триггер-правило не выполнено (Срез 7)
+LAZY_IMPORT = "LAZY_IMPORT"  # PEP 810 lazy import в DAG-файле (Срез 22)
 
 
 @dataclasses.dataclass(frozen=True)

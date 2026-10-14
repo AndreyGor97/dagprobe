@@ -1,4 +1,4 @@
-"""CLI dagprobe: ``list`` / ``lint`` / ``render`` / ``run`` / ``audit``.
+"""CLI dagprobe: ``list`` / ``lint`` / ``render`` / ``run`` / ``audit`` / ``ab``.
 
 Профиль версии для ``run``/``audit`` — встроенный выбор: ``3.3`` (умолчание)
 и ``2.10`` (легаси-контекст, Срез 8); произвольная версия — файл 18, F4.
@@ -21,6 +21,7 @@ from dagprobe.analyze import AnalysisResult, analyze_file
 from dagprobe.audit import audit_2to3
 from dagprobe.errors import DAGProbeError
 from dagprobe.lint import lint_file
+from dagprobe.live import _emit_ab, ab_command
 from dagprobe.task_test import run_dag
 
 FORMATS = ("text", "json", "junit")
@@ -221,6 +222,28 @@ def main(argv: list[str] | None = None) -> int:
     p_audit.add_argument("--fixtures", type=Path, default=None)
     p_audit.add_argument("--format", choices=("text", "json"), default="text")
     p_audit.add_argument("--fail-on", choices=GATES, default="warning")
+    p_ab = sub.add_parser(
+        "ab", help="live A/B: shim task statuses vs real Airflow DAG.test() (mode B)"
+    )
+    p_ab.add_argument("--dags-folder", type=Path, required=True)
+    p_ab.add_argument("--dag-id", default=None)
+    p_ab.add_argument(
+        "--fixtures", type=Path, default=None, help="fixtures for the shim run (mode A only)"
+    )
+    p_ab.add_argument(
+        "--venv",
+        type=Path,
+        default=None,
+        help="existing mode-b venv (default: create .dagprobe/venv-mode-b via uv)",
+    )
+    p_ab.add_argument("--airflow-version", default="3.3.2")
+    p_ab.add_argument(
+        "--home",
+        type=Path,
+        default=None,
+        help="AIRFLOW_HOME for the live run (default: ./.dagprobe)",
+    )
+    p_ab.add_argument("--format", choices=("text", "json"), default="text")
 
     args = parser.parse_args(argv)
     if args.command == "render":
@@ -259,6 +282,25 @@ def main(argv: list[str] | None = None) -> int:
             sys.stdout.write("\n")
             return code
         _emit_audit(out, args.format)
+        return code
+    if args.command == "ab":
+        out, code = ab_command(
+            args.dags_folder,
+            dag_id=args.dag_id,
+            fixtures=args.fixtures,
+            venv=args.venv,
+            airflow_version=args.airflow_version,
+            home=args.home,
+        )
+        if "error" in out:
+            json.dump(out, sys.stdout, ensure_ascii=False)
+            sys.stdout.write("\n")
+            return code
+        if args.format == "json":
+            json.dump(out, sys.stdout, indent=1, ensure_ascii=False)
+            sys.stdout.write("\n")
+        else:
+            _emit_ab(out, args.airflow_version)
         return code
     if args.command == "lint":
         try:

@@ -19,6 +19,7 @@ from pathlib import Path
 from dagprobe.errors import (
     DEPRECATED_API,
     IMPLICIT_CATCHUP,
+    LAZY_IMPORT,
     NONDETERMINISTIC_TIME,
     WARNING,
     DAGProbeError,
@@ -113,10 +114,39 @@ def rule_implicit_catchup(_path: Path, tree: ast.Module) -> list[DAGProbeError]:
     return out
 
 
+def rule_lazy_import(_path: Path, tree: ast.Module) -> list[DAGProbeError]:
+    """`lazy import` (PEP 810, Python 3.15+) в DAG-файле — warning.
+
+    Отложенный импорт прячет import-ошибку до первого обращения: `dagprobe list`
+    покажет файл зелёным, а упадёт задача на воркере. Воркер на Python < 3.15
+    не разберёт весь файл (SyntaxError). Правило активно только там, где синтаксис
+    парсится (3.15+); на нижних версиях то же место ловит analyze_file как
+    IMPORT_FAILURE.
+    """
+    out: list[DAGProbeError] = []
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, (ast.Import, ast.ImportFrom))
+            and getattr(node, "is_lazy", False)  # поле есть только в AST 3.15+
+            and LAZY_IMPORT not in _ignored(node, _lines)
+        ):
+            out.append(
+                DAGProbeError(
+                    code=LAZY_IMPORT,
+                    severity=WARNING,
+                    message="lazy import (PEP 810): import errors surface at first use, "
+                    "not at DAG import; workers on Python < 3.15 fail with SyntaxError",
+                    line=node.lineno,
+                )
+            )
+    return out
+
+
 RULES: dict[str, Rule] = {
     DEPRECATED_API: rule_deprecated_api,
     NONDETERMINISTIC_TIME: rule_nondeterministic_time,
     IMPLICIT_CATCHUP: rule_implicit_catchup,
+    LAZY_IMPORT: rule_lazy_import,
 }
 
 

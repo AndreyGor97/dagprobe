@@ -176,6 +176,12 @@ def build_context(task: Any, logical_date: datetime, profile: str = "3.3") -> di
     рендер ``{{ prev_ds }}`` громко падает UndefinedError (StrictUndefined),
     как живой 3.3.2 (зонд Срез 18).
 
+    _success-ключи (Срез 20, зонды против живых 2.10.5 и 3.3.2): в оба
+    профиля входят ``prev_data_interval_*_success``, ``prev_start_date_success``,
+    ``prev_end_date_success`` = None — живые движки на первом прогоне без
+    истории dag-run дают то же (jinja → ``'None'``); ``prev_execution_date_success``
+    есть только в 2.x — в профиле ``"3.3"`` рендер громко падает UndefinedError.
+
     ponytail: ``var``/``conn`` не входят — это L1-фикстуры (Срез 2+); шаблон с
     ``{{ var.value.x }}`` падает громкой ошибкой Jinja, а не тихо рендерится.
     """
@@ -195,6 +201,14 @@ def build_context(task: Any, logical_date: datetime, profile: str = "3.3") -> di
         "run_id": "dagprobe",
         "ti": _Ti(task, profile),
         "task_instance": _Ti(task, profile),
+        # _success-ключи (зонд Срез 20, живые 2.10.5 и 3.3.2): первый прогон
+        # без истории dag-run → все None (jinja → 'None'). Историю прогонов
+        # движок не моделирует — значения из прошлого успешного прогона
+        # (включая wall-clock prev_end_date_success) не эмулируются.
+        "prev_data_interval_start_success": None,
+        "prev_data_interval_end_success": None,
+        "prev_start_date_success": None,
+        "prev_end_date_success": None,
     }
     if profile == "2.10":
         from dagprobe.shim import _timetable
@@ -216,6 +230,8 @@ def build_context(task: Any, logical_date: datetime, profile: str = "3.3") -> di
                 "prev_ds_nodash": prev_dt.strftime("%Y%m%d") if prev_dt else None,
                 "next_ds": next_dt.strftime("%Y-%m-%d") if next_dt else None,
                 "next_ds_nodash": next_dt.strftime("%Y%m%d") if next_dt else None,
+                # есть в 2.x, нет в 3.x → в профиле 3.3 громкий Undefined (живой 3.3.2)
+                "prev_execution_date_success": None,
             }
         )
     elif profile != "3.3":

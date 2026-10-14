@@ -31,5 +31,8 @@ spike/out/
 # артефакты A/B статусов — генерятся spike/run_ab.py
 spike/ab_dags/
 
+# локальный режим Б `dagprobe ab` (venv + AIRFLOW_HOME + синк DAGS_FOLDER)
+.dagprobe/
+
 # локальные зеркала для публикации
 .scratch/

@@ -16,10 +16,11 @@ $ pip install dagprobe
 | Command | Purpose |
 |---|---|
 | `dagprobe list` | Import a DAGs folder, list DAG ids and import errors (with timing) |
-| `dagprobe lint` | Import + static lint for CI: duplicate task ids, `datetime.now()` in DAG code, missing `catchup=`, deprecated kwargs; `--changed-only` lints just the files changed vs a base branch |
+| `dagprobe lint` | Import + static lint for CI: duplicate task ids, `datetime.now()` in DAG code, missing `catchup=`, deprecated kwargs, `lazy import` (PEP 810 — import errors would surface on workers, not at import); `--changed-only` lints just the files changed vs a base branch |
 | `dagprobe render` | Jinja preview: rendered `template_fields` per task (before → after) |
 | `dagprobe run` | Task Test: execute a DAG's tasks against fixtures — `PythonOperator` callables run for real, `trigger_rule` and `BranchPythonOperator` branching follow Airflow semantics, in-memory DB connections read/write across tasks |
 | `dagprobe audit 2to3` | Run the same DAG under the 2.10 and 3.3 behavior profiles and report divergences (e.g. XCom value unwrapping, task `status` changes) |
+| `dagprobe ab` | Live A/B: run the same DAGs through the shim and a real Airflow (`DAG.test()` in a managed venv, Airflow 3.3.2 by default) and report any task-status divergence |
 
 `lint` and `run` are CI-first: `--format text|json|junit` and `--fail-on error|warning|never`,
 stable exit codes (`0` clean, `1` findings at gate level, `2` usage/setup error), JUnit output
