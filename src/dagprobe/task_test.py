@@ -35,12 +35,14 @@ from dagprobe.shim.airflow.providers.standard.operators.python import (
 from dagprobe.task_test import branch_targets, trigger_rule_decide
 
 path, run_json, out_path = sys.argv[1], sys.argv[2], sys.argv[3]
+_raw_open = open  # до activate(): запись результата прогона не под файловым стабом
 cfg = json.loads(run_json)
 
 
 def emit(obj):
-    # результат в файл, не в stdout: тело задачи может печатать (как в analyze)
-    with open(out_path, "w", encoding="utf-8") as fh:
+    # результат в файл, не в stdout: тело задачи может печатать (как в analyze);
+    # _raw_open захвачен до активации фикстур — файловый стаб не съедает вывод прогона
+    with _raw_open(out_path, "w", encoding="utf-8") as fh:
         json.dump(obj, fh, default=str)
 
 def resolve(v):
@@ -69,13 +71,14 @@ def _run_mapped(task, args, kwargs):
                 f"task {task.task_id!r}: expand_kwargs expects a list of dicts "
                 f"(or an XComArg resolving to one), got {type(xk).__name__}"
             )
-        results = []
+        results, errs = [], []
         for i, call_kwargs in enumerate(xk):
             try:
                 results.append(task.python_callable(*args, **{**static, **call_kwargs}))
             except Exception as e:
-                raise RuntimeError(f"map_index={i}: {e}") from e
-        return results
+                # раскрутки независимы (как TIs в Airflow): падение индекса не мешает остальным
+                errs.append(f"map_index={i}: {''.join(traceback.format_exception(e)).strip()}")
+        return results, errs
     mapped = {k[9:]: v for k, v in kwargs.items() if k.startswith("__mapped_")}
     if not mapped:
         raise ValueError(f"mapped task {task.task_id!r} has no expand arguments")
@@ -84,7 +87,7 @@ def _run_mapped(task, args, kwargs):
         raise ValueError(
             f"task {task.task_id!r}: expand arguments have different lengths {sorted(lengths)}"
         )
-    results = []
+    results, errs = [], []
     for i in range(lengths.pop()):
         call_kwargs = {**static, **{k: v[i] for k, v in mapped.items()}}
         inner = call_kwargs.pop("op_kwargs", None)
@@ -95,8 +98,8 @@ def _run_mapped(task, args, kwargs):
         try:
             results.append(task.python_callable(*args, **call_kwargs))
         except Exception as e:
-            raise RuntimeError(f"map_index={i}: {e}") from e
-    return results
+            errs.append(f"map_index={i}: {''.join(traceback.format_exception(e)).strip()}")
+    return results, errs
 
 
 def topo_order(dag):
@@ -170,15 +173,20 @@ try:
                 ctx = _templates.build_context(task, logical_date, cfg.get("profile", "3.3"))
                 with _templates.current_context(ctx):
                     if getattr(task, "mapped", False):
-                        result = _run_mapped(task, args, kwargs)
-                        if not result:
+                        result, errs = _run_mapped(task, args, kwargs)
+                        if not result and not errs:
                             # как в Airflow: 0 раскруток → задача skipped, downstream за ней тоже
                             statuses[tid] = "skipped"
                             continue
                     else:
                         result = task.python_callable(*args, **kwargs)
+                        errs = None
                 xcom_mod.xcom.set(tid, "return_value", result)
                 values[tid] = repr(result)
+                if errs:
+                    # как в Airflow: задача failed, но частичные успехи уже в XCom
+                    # (downstream с all_done вытянет список успешных раскруток)
+                    raise RuntimeError("\n".join(errs))
                 statuses[tid] = "ok"
                 if isinstance(task, BranchPythonOperator):
                     # семантика BranchMixIn (airflow 3.3.2): None → все downstream skipped,

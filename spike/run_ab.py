@@ -195,6 +195,36 @@ with DAG("ab_xcom_template", schedule=None, start_date=None, catchup=False) as d
     )
     p >> [s, c, m]
 """,
+    # Срез 24: раскрутки независимы — 1 из 3 падает, остальные исполняются;
+    # downstream all_done тянет частичные успехи из XCom (агрегация mapped-ТИ
+    # в live.py обязана считать задачу failed по упавшему индексу)
+    "ab_map_partial": """
+from airflow.providers.standard.operators.python import PythonOperator
+from airflow.sdk import DAG, task
+
+with DAG("ab_map_partial", schedule=None, start_date=None, catchup=False) as dag:
+
+    @task
+    def make():
+        return [1, 2, 3]
+
+    @task
+    def boom(x):
+        if x == 2:
+            raise ValueError("нарочно на 2")
+        return x
+
+    def collect(xs):
+        return sum(xs)
+
+    out = boom.expand(x=make())
+    (out >> PythonOperator(
+        task_id="collect",
+        python_callable=collect,
+        op_kwargs={"xs": out},
+        trigger_rule="all_done",
+    ))
+""",
     # Срез 18: prev_ds в 3.x отсутствует — шаблон обязан громко падать в обоих
     # режимах (StrictUndefined), чистая задача — работать; расписание @daily,
     # чтобы подтвердить: ключей нет даже при известном расписании
@@ -269,7 +299,15 @@ def mode_b() -> dict[str, dict[str, str]]:
     for dag_id in SOURCES:
         dr = dags[dag_id].test(logical_date=EXEC_DATE)
         assert dr is not None, f"{dag_id}: DAG.test() не вернул DagRun"
-        out[dag_id] = {ti.task_id: str(ti.state) for ti in dr.get_task_instances()}
+        out[dag_id] = {}
+        # mapped-задача даёт несколько TI на task_id: failed любого индекса =
+        # failed задачи (как в UI Airflow и в live.py), иначе состояние по важности
+        rank = {"failed": 0, "upstream_failed": 1, "success": 2, "skipped": 3}
+        for ti in dr.get_task_instances():
+            cur = out[dag_id].get(ti.task_id)
+            state = str(ti.state)
+            if cur is None or rank.get(state, 99) < rank.get(cur, 99):
+                out[dag_id][ti.task_id] = state
     return out
 
 

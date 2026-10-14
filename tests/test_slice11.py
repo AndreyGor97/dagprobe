@@ -96,6 +96,55 @@ def test_expand_instance_failure_is_loud(tmp_path: Path) -> None:
     assert "нарочно" in run.failures["boom"]
 
 
+# --- Срез 24: раскрутки независимы (как TIs в Airflow) — падение одной не мешает остальным ---
+
+PARTIAL = """
+from airflow.providers.standard.operators.python import PythonOperator
+from airflow.sdk import task, DAG
+
+with DAG("map_partial", schedule=None, start_date=None, catchup=False) as dag:
+
+    @task
+    def make():
+        return [1, 2, 3]
+
+    @task
+    def boom(x):
+        if x == 2:
+            raise ValueError("нарочно на 2")
+        return x
+
+    def collect(xs):
+        return sum(xs)
+
+    out = boom.expand(x=make())
+    (out >> PythonOperator(
+        task_id="collect",
+        python_callable=collect,
+        op_kwargs={"xs": out},
+        trigger_rule="all_done",
+    ))
+"""
+
+
+def test_expand_failure_continues_rest(tmp_path: Path) -> None:
+    dags = _write(tmp_path, FAILING)
+    run = run_dag(dags / "dag0.py", "map_failing")
+    # индекс 1 упал, но 0 и 2 исполнились — задача failed, успехи в XCom
+    assert run.statuses["boom"] == "failed"
+    assert run.values["boom"] == repr([1, 3])
+    assert "map_index=1" in run.failures["boom"]
+
+
+def test_expand_failure_partial_xcom_downstream_all_done(tmp_path: Path) -> None:
+    dags = _write(tmp_path, PARTIAL)
+    run = run_dag(dags / "dag0.py", "map_partial")
+    # как в Airflow: mapped failed → all_success-downstream не пойдёт,
+    # но all_done выполняется и тянет список успешных раскруток из XCom
+    assert run.statuses == {"make": "ok", "boom": "failed", "collect": "ok"}
+    assert run.values["collect"] == repr(4)
+
+
 # --- expand_kwargs (Срез 14): каждый dict списка — kwargs одной раскрутки ---
 
 XKW_LITERAL = """

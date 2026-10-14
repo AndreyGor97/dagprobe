@@ -13,8 +13,11 @@
 - ``delimiter`` в фикстуре не задаётся: файл задан сырым текстом (``csv:``), разделитель
   содержится в самих байтах, угадывать нечего — парсит штатный pandas своими kwargs.
   ``encoding`` обязателен (текст→байты иначе угадывается), см. ``fixtures._load_files``.
-- Fallback-уровень §8.7 (monkeypatch ``open``/``os``/``pathlib``) не реализован: в спеке
-  он назван явным fallback'ом, а не основным путём.
+- Fallback-уровень §8.7 (Срез 25): ``builtins.open`` и ``pathlib.Path.open`` (в 3.15
+  ``read_text``/``write_text`` идут мимо ``builtins.open`` — только через ``Path.open``)
+  идут по тем же правилам ``files:``: чтение отдаёт текст фикстуры, запись — в Run
+  Namespace, путь вне правил — громкий ``FileNotStubbed``. ``os.remove``/``os.rename``
+  не перехвачены (задачи ими не пользуются; при первом случае — дополнить здесь же).
 """
 
 from __future__ import annotations
@@ -42,13 +45,16 @@ class FileNotStubbed(Exception):
 
 
 def install() -> None:
-    """Навесить перехват на pandas (идемпотентно).
+    """Навесить перехват на pandas и open (идемпотентно).
 
     Процесс прогона одноразовый (§6.23), поэтому патч процесса — не конфликт:
     на боевой ФС при этом не попадает ничего, см. ``FileNotStubbed``.
     """
     if _saved:
         return
+    import builtins
+    import pathlib
+
     import pandas as pd
 
     for name in _READERS:
@@ -59,18 +65,30 @@ def install() -> None:
         orig = getattr(pd.DataFrame, name)
         _saved[f"DataFrame.{name}"] = orig
         setattr(pd.DataFrame, name, _writer(orig))
+    # fallback §8.7: builtins.open + Path.open (read_text/write_text в 3.15
+    # маршрутизируются через Path.open, мимо builtins.open)
+    _saved["open"] = builtins.open
+    fopen = _open(builtins.open)
+    builtins.open = fopen
+    _saved["Path.open"] = pathlib.Path.open
+    pathlib.Path.open = lambda self, mode="r", *a, **k: fopen(self, mode, *a, **k)  # type: ignore[method-assign]
 
 
 def uninstall() -> None:
     """Снять перехват (нужно только тестам: прогон живёт в своём процессе)."""
     if not _saved:
         return
+    import builtins
+    import pathlib
+
     import pandas as pd
 
     for name in _READERS:
         setattr(pd, name, _saved[name])
     for name in _WRITERS:
         setattr(pd.DataFrame, name, _saved[f"DataFrame.{name}"])
+    builtins.open = _saved["open"]
+    pathlib.Path.open = _saved["Path.open"]  # type: ignore[method-assign]
     _saved.clear()
 
 
@@ -154,15 +172,60 @@ def _writer(orig: Callable[..., Any]) -> Callable[..., Any]:
         if isinstance(path_or_buf, (str, os.PathLike)) and _rules():
             _stub(path_or_buf)  # правило есть — пишем в namespace, нет — громкая ошибка
             out = orig(self, None, *args, **kwargs)  # as-text/bytes, без записи на диск
-            written_now = dict(_local.written or {})
-            # ключ нормализуем: на Windows pathlib отдаёт \data\x.csv, на Linux /data/x.csv —
-            # ответ прогона не должен зависеть от ОС
-            written_now[str(path_or_buf).replace("\\", "/")] = _preview(out)
-            _local.written = written_now
+            _record(str(path_or_buf), _preview(out))
             return None
         return orig(self, path_or_buf, *args, **kwargs)
 
     return wrapper
+
+
+def _open(orig: Callable[..., Any]) -> Callable[..., Any]:
+    """Fallback §8.7: open() по правилам ``files:`` — чтение из фикстуры, запись в namespace.
+
+    ``os``-уровень (remove/rename) не перехвачен — см. docstring модуля.
+    """
+    write_flags = ("w", "a", "x")
+
+    @functools.wraps(orig)
+    def wrapper(file: Any, mode: str = "r", *args: Any, **kwargs: Any) -> Any:
+        if isinstance(file, (str, os.PathLike)) and _rules():
+            rule = match(file)
+            if rule is None:
+                rule = _stub(file)  # громкая ошибка с перечнем правил
+            binary = "b" in mode
+            if any(m in mode for m in write_flags):
+                buf: io.StringIO | io.BytesIO = io.BytesIO() if binary else io.StringIO()
+                real_close = buf.close
+
+                def _capture() -> None:
+                    data = buf.getvalue()
+                    text = data if isinstance(data, str) else f"<{len(data)} bytes>"
+                    _record(str(file), text, append="a" in mode)
+                    real_close()
+
+                buf.close = _capture  # type: ignore[method-assign]
+                return buf
+            if rule.rows is not None:
+                msg = (
+                    f"path {file!s}: rows-rule has no raw text for open() (§8.7) — "
+                    f"use csv: for paths read via open()"
+                )
+                raise FileNotStubbed(msg)
+            assert rule.csv is not None and rule.encoding is not None
+            data = rule.csv.encode(rule.encoding)
+            return io.BytesIO(data) if binary else io.StringIO(rule.csv)
+        return orig(file, mode, *args, **kwargs)
+
+    return wrapper
+
+
+def _record(path: str, text: str, append: bool = False) -> None:
+    # ключ нормализуем: на Windows pathlib отдаёт \data\x.csv, на Linux /data/x.csv —
+    # ответ прогона не должен зависеть от ОС
+    key = path.replace("\\", "/")
+    now = dict(_local.written or {})
+    now[key] = now[key] + text if append and key in now else text
+    _local.written = now
 
 
 def _preview(out: Any) -> str:

@@ -63,7 +63,16 @@ try:
     result = {}
     for dag_id in ids:
         dr = dags[dag_id].test(logical_date=ld)
-        result[dag_id] = {ti.task_id: str(ti.state) for ti in dr.get_task_instances()}
+        # mapped-задача даёт несколько TI на task_id: failed любого индекса =
+        # failed задачи (как в UI Airflow), иначе первое состояние по важности
+        _rank = {"failed": 0, "upstream_failed": 1, "success": 2, "skipped": 3}
+        agg: dict[str, str] = {}
+        for ti in dr.get_task_instances():
+            cur = agg.get(ti.task_id)
+            state = str(ti.state)
+            if cur is None or _rank.get(state, 99) < _rank.get(cur, 99):
+                agg[ti.task_id] = state
+        result[dag_id] = agg
     payload = {"statuses": result, "error": ""}
 except Exception:
     payload = {"statuses": {}, "error": traceback.format_exc()}
