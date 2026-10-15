@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from dagprobe.task_test import run_dag
 
 MINI = """\
@@ -142,6 +144,8 @@ def test_taskflow_context_params_and_hook_on_fake(tmp_path: Path) -> None:
     assert "2026-09-29T00:00:00" in run.values["show"]
 
 
+# RealDag/ в .gitignore (локальный корпус) — в CI-чекaутe его нет, честный skip
+@pytest.mark.skipif(not REALDAG_FILE.exists(), reason="локальный корпус RealDag/ отсутствует")
 def test_realdag_clhs_inserts_count_runs_end_to_end(tmp_path: Path) -> None:
     fixtures = tmp_path / "fx.yaml"
     fixtures.write_text(REALDAG_FIXTURES, encoding="utf-8")
