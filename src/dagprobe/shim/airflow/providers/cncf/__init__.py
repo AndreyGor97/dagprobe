@@ -1,0 +1,1 @@
+"""Провайдер CNCF (Kubernetes)."""

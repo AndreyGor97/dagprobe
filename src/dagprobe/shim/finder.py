@@ -23,6 +23,8 @@ from collections.abc import Sequence
 from types import ModuleType
 
 _SHIM_ROOT = "dagprobe.shim."
+# Корни, чьи поддеревья зеркалятся целиком: airflow + сторонние плагины (2.x-совместимость).
+_SHIMMED_ROOTS = ("airflow", "airflow_clickhouse_plugin")
 
 
 class _ShimRelayLoader(importlib.abc.Loader):
@@ -58,7 +60,7 @@ class DagProbeFinder(importlib.abc.MetaPathFinder):
         path: Sequence[str] | None = None,
         target: ModuleType | None = None,
     ) -> importlib.machinery.ModuleSpec | None:
-        if fullname != "airflow" and not fullname.startswith("airflow."):
+        if not any(fullname == r or fullname.startswith(r + ".") for r in _SHIMMED_ROOTS):
             return None
         try:
             spec = importlib.util.find_spec(_SHIM_ROOT + fullname)

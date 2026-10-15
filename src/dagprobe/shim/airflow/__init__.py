@@ -14,6 +14,8 @@ from typing import Any
 _LAZY: dict[str, tuple[str, str]] = {
     "DAG": ("dagprobe.shim._core", "DAG"),
     "XComArg": ("dagprobe.shim._taskflow", "XComArg"),
+    "Dataset": ("dagprobe.shim._core", "Dataset"),
+    "Variable": ("dagprobe.shim._core", "Variable"),
 }
 
 __all__ = list(_LAZY)

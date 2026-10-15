@@ -22,15 +22,22 @@ from dagprobe.analyze import LOGICAL_DATE, TIMEOUT_S, run_child
 
 _RUN_CHILD_TEMPLATE = r"""
 import importlib.util
+import inspect
 import json
 import sys
 import traceback
 
 from dagprobe.shim import _core, _fileintercept, _intercept, activate, deactivate
 from dagprobe.shim import _templates, xcom as xcom_mod
+from dagprobe.shim.airflow.providers.standard.operators.empty import EmptyOperator
 from dagprobe.shim.airflow.providers.standard.operators.python import (
     BranchPythonOperator,
     ShortCircuitOperator,
+)
+from dagprobe.shim.airflow_clickhouse_plugin.hooks.clickhouse import ClickHouseHook
+from dagprobe.shim.airflow_clickhouse_plugin.operators.clickhouse import ClickHouseOperator
+from dagprobe.shim.airflow_clickhouse_plugin.sensors.clickhouse_dbapi import (
+    ClickHouseSqlSensor,
 )
 from dagprobe.task_test import branch_targets, trigger_rule_decide
 
@@ -160,6 +167,10 @@ try:
                 continue
         xcom_mod.RunContext.activate(cfg["run_id"])
         try:
+            # params= у TaskFlow-вызова — в task.params (контекст), не в аргументы
+            # (как в Airflow: params перехватывается до вызова callable)
+            if isinstance(getattr(task, "op_kwargs", {}).get("params"), dict):
+                task.params = {**task.params, **task.op_kwargs.pop("params")}
             # рендер внутри RunContext (как в Airflow: template_fields рендерятся
             # при старте задачи) — иначе xcom_pull в шаблоне громко падает;
             # ошибка рендера → failed этой задачи, не <setup> всего прогона
@@ -171,6 +182,13 @@ try:
                 args = [resolve(a) for a in getattr(task, "op_args", ())]
                 kwargs = {k: resolve(v) for k, v in getattr(task, "op_kwargs", {}).items()}
                 ctx = _templates.build_context(task, logical_date, cfg.get("profile", "3.3"))
+                # callable с **kwargs (как в Airflow) получает контекст в kwargs:
+                # op_kwargs перекрывают контекст при коллизии ключей
+                if any(
+                    p.kind == inspect.Parameter.VAR_KEYWORD
+                    for p in inspect.signature(task.python_callable).parameters.values()
+                ):
+                    kwargs = {**ctx, **kwargs}
                 with _templates.current_context(ctx):
                     if getattr(task, "mapped", False):
                         result, errs = _run_mapped(task, args, kwargs)
@@ -210,7 +228,24 @@ try:
                             if getattr(task, "ignore_downstream_trigger_rules", True):
                                 frontier.append(s)
             else:
-                statuses[tid] = "skipped"  # не-Python задачи прогон не исполняет
+                if isinstance(task, EmptyOperator):
+                    statuses[tid] = "ok"  # EmptyOperator.execute — no-op, как в Airflow
+                elif isinstance(task, ClickHouseOperator):
+                    ClickHouseHook(task.clickhouse_conn_id).execute(
+                        task.sql, task.parameters or None
+                    )
+                    statuses[tid] = "ok"
+                elif isinstance(task, ClickHouseSqlSensor):
+                    # одноразовый прогон: один poke; False = failed — в Airflow
+                    # сенсор ретраил бы до timeout и зафейлился так же
+                    if task.poke():
+                        statuses[tid] = "ok"
+                    else:
+                        raise RuntimeError(
+                            f"sensor {tid!r}: poke returned False (no rows matched)"
+                        )
+                else:
+                    statuses[tid] = "skipped"  # остальные не-Python задачи прогон не исполняет
         except Exception as e:
             statuses[tid] = "failed"
             failures[tid] = "".join(traceback.format_exception(e)).strip()

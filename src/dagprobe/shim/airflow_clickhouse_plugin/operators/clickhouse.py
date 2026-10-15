@@ -1,0 +1,28 @@
+"""Shim ``airflow_clickhouse_plugin.operators.clickhouse.ClickHouseOperator``."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from dagprobe.shim._core import BaseOperator
+
+
+class ClickHouseOperator(BaseOperator):
+    """Стаб: sql/parameters/database — шаблонные поля как в плагине."""
+
+    template_fields = ("sql", "parameters", "database")
+
+    def __init__(
+        self,
+        *,
+        sql: Any = None,
+        parameters: dict[str, Any] | None = None,
+        database: str | None = None,
+        clickhouse_conn_id: str = "clickhouse_default",
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
+        self.sql = sql
+        self.parameters = parameters or {}
+        self.database = database
+        self.clickhouse_conn_id = clickhouse_conn_id

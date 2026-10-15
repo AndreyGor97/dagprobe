@@ -158,6 +158,51 @@ class TaskGroup:
 
     def __init__(self, group_id: str) -> None:
         self.group_id = group_id
+        self.members: list[_core.BaseOperator] = []  # регистрирует BaseOperator.__init__
+        self.upstream_task_ids: set[str] = set()
+        self.downstream_task_ids: set[str] = set()
+
+    @property
+    def task_id(self) -> str:
+        """Как в Airflow: у группы ``task_id`` = ``group_id`` (оператор группы не создаётся)."""
+        return self.group_id
+
+    upstream_task_ids: set[str]
+    downstream_task_ids: set[str]  # края группы как узла (для ``group >> group``)
+
+    def _wire_node(
+        self, node: _core.BaseOperator | TaskGroup, *, node_is_downstream: bool
+    ) -> _core.BaseOperator | TaskGroup:
+        """``group >> node`` (True): края из листьев группы; ``node >> group`` (False): в корни.
+
+        Корень/лист — по краям внутри группы (как у DAGNode в Airflow).
+        """
+
+        node_id = node.task_id if isinstance(node, _core.BaseOperator) else node.group_id
+        ids = {m.task_id for m in self.members}
+        if node_is_downstream:
+            ends = [m for m in self.members if not (m.downstream_task_ids & ids)]
+            for m in ends:
+                m.downstream_task_ids.add(node_id)
+                node.upstream_task_ids.add(m.task_id)
+        else:
+            roots = [m for m in self.members if not (m.upstream_task_ids & ids)]
+            for m in roots:
+                m.upstream_task_ids.add(node_id)
+                node.downstream_task_ids.add(m.task_id)
+        return node
+
+    def __rshift__(self, other: _core.BaseOperator | TaskGroup) -> _core.BaseOperator | TaskGroup:
+        return self._wire_node(other, node_is_downstream=True)
+
+    def __lshift__(self, other: _core.BaseOperator | TaskGroup) -> _core.BaseOperator | TaskGroup:
+        return self._wire_node(other, node_is_downstream=False)
+
+    # ``[t1, t2] >> group``: список слева → зовётся __rrshift__ группы
+    def __rrshift__(self, other: Iterable[_core.BaseOperator]) -> TaskGroup:
+        for op in other:
+            self._wire_node(op, node_is_downstream=False)
+        return self
 
     def __enter__(self) -> TaskGroup:
         self._prev = _core.current_group()
@@ -204,3 +249,32 @@ class _GroupExpand:
 
 # ``from airflow.sdk import task`` — один общий экземпляр фабрики; ``task.branch`` — свой.
 task = TaskFactory()
+
+
+class DagFactory:
+    """``@dag`` / ``@dag(**opts)``: вызов декорированной функции создаёт DAG.
+
+    Как в Airflow: тело функции исполняется один раз внутри контекста DAG,
+    возвращается сам DAG (дальше его можно положить в глобальную переменную).
+    """
+
+    def __call__(self, fn: Callable[..., Any] | None = None, **opts: Any) -> Any:
+        if fn is None:  # @dag(schedule=..., ...)
+            return lambda f: self._make(f, opts)
+        return self._make(fn, opts)
+
+    def _make(self, fn: Callable[..., Any], opts: dict[str, Any]) -> Any:
+        # Как в Airflow: декоратор оставляет функцию вызываемой; DAG строится
+        # в момент вызова (модуль делает ``dag_fn()`` после объявления).
+        @functools.wraps(fn)
+        def factory(*args: Any, **kwargs: Any) -> Any:
+            dag_opts = dict(opts)
+            dag = _core.DAG(dag_opts.pop("dag_id", fn.__name__), **dag_opts)
+            with dag:
+                fn(*args, **kwargs)
+            return dag
+
+        return factory
+
+
+dag = DagFactory()

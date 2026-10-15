@@ -45,6 +45,43 @@ def reset_registry() -> None:
     _dag_registry.clear()
 
 
+class Variable:
+    """Стаб ``Variable`` метастора: parse-time — хранение, ``get`` — fixtures/дефолт.
+
+    ``Variable.get(key, default_var=...)`` возвращает дефолт (как в Airflow при
+    отсутствии ключа); без дефолта — громкая ошибка: значение берёт движок Airflow.
+    """
+
+    _NO_DEFAULT = object()
+
+    def __init__(self, key: str | None = None, val: Any = None, **kwargs: Any) -> None:
+        self.key = key
+        self.val = val
+
+    @classmethod
+    def get(cls, key: str, default_var: Any = _NO_DEFAULT, deserialize_json: bool = False) -> Any:
+        if default_var is not cls._NO_DEFAULT:
+            return default_var
+        msg = (
+            f"Variable {key!r}: значения нет ни в fixtures, ни в default_var — "
+            "метастор Airflow в шиме не эмулируется"
+        )
+        raise RuntimeError(msg)
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<Variable {self.key}>"
+
+
+class Dataset:
+    """Стаб ``airflow.Dataset`` (в 3.x — алиас Asset): uri + extra, граф не трогает."""
+
+    template_fields = ("uri",)
+
+    def __init__(self, uri: str, *, extra: dict[str, Any] | None = None, **kwargs: Any) -> None:
+        self.uri = uri
+        self.extra = extra or {}
+
+
 class BaseOperator:
     """Общий базовый класс операторов: регистрация в DAG + зависимости."""
 
@@ -59,6 +96,7 @@ class BaseOperator:
         group = current_group()
         if group is not None:
             task_id = f"{group.group_id}.{task_id}"  # как в Airflow: «op.add_1»
+            group.members.append(self)
         self.task_id = task_id
         self.mapped = False
         self.upstream_task_ids = set()
@@ -94,12 +132,40 @@ class BaseOperator:
     def __lshift__(self, other: OperatorArg) -> OperatorArg:
         return self._wire(other, downstream=False)
 
+    # ``[t1, t2] >> t3``: слева список без __rshift__ — Python зовёт __rrshift__ справа;
+    # self здесь НИЖНИЙ по потоку (other — верхний), возвращаем self для цепочек
+    def __rrshift__(self, other: OperatorArg) -> OperatorArg:
+        self._wire(other, downstream=False)
+        return self
+
+    def __rlshift__(self, other: OperatorArg) -> OperatorArg:
+        self._wire(other, downstream=True)
+        return self
+
+    # явный API Airflow (корпус RealDag2: ``t2.set_upstream(t1)``)
+    def set_upstream(self, other: OperatorArg) -> None:
+        self._wire(other, downstream=False)
+
+    def set_downstream(self, other: OperatorArg) -> None:
+        self._wire(other, downstream=True)
+
     def _wire(self, other: OperatorArg, *, downstream: bool) -> OperatorArg:
-        """``self >> other`` (downstream=True) либо ``self << other`` (downstream=False)."""
-        items: list[BaseOperator] = (
-            [*other] if isinstance(other, (list, tuple, set, frozenset)) else [other]  # type: ignore[list-item]
+        """``self >> other`` (downstream=True) либо ``self << other`` (False).
+
+        Операндом может быть XComArg (``op >> task_fn(...)`` в TaskFlow) —
+        как в Airflow, проводка идёт на лежащую в нём задачу.
+        """
+        from dagprobe.shim._taskflow import TaskGroup, XComArg
+
+        items_raw: list[Any] = (
+            [*other] if isinstance(other, (list, tuple, set, frozenset)) else [other]
         )
+        items = [item.task if isinstance(item, XComArg) else item for item in items_raw]
         for op in items:
+            if isinstance(op, TaskGroup):
+                # op >> group: в корни группы; op << group: из листьев группы
+                op._wire_node(self, node_is_downstream=not downstream)
+                continue
             self._assert_operator(op)
             if downstream:
                 op.upstream_task_ids.add(self.task_id)

@@ -1,0 +1,1 @@
+"""Провайдер Apache (Hive, Spark)."""

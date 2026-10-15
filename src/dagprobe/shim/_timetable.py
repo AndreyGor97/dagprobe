@@ -141,6 +141,18 @@ def _cron_search(fields: _CronFields, logical_date: datetime, backwards: bool) -
     raise RuntimeError(msg)
 
 
+def next_tick(logical_date: datetime, schedule: object) -> datetime:
+    """Первый тик расписания строго после ``logical_date`` (``data_interval_end`` Airflow).
+
+    Только cron-строки/алиасы (как у ``prev_next``); вызывающий сам сводит
+    ``None``/``@once`` к ``logical_date`` и прибавляет ``timedelta``.
+    """
+    if not isinstance(schedule, str):
+        msg = f"schedule {schedule!r}: expected a cron string (or @alias)"
+        raise ValueError(msg)
+    return _cron_search(_parse_cron(_CRON_ALIASES.get(schedule, schedule)), logical_date, False)
+
+
 def prev_next(logical_date: datetime, schedule: object) -> tuple[datetime | None, datetime | None]:
     """Живая семантика 2.10: ``(prev_execution_date, next_execution_date)``.
 

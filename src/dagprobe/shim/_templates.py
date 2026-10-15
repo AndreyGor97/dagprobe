@@ -123,6 +123,11 @@ class _Ti:
     def task_id(self) -> str:
         return self._task_id
 
+    def xcom_push(self, key: str, value: Any, **_: Any) -> None:
+        from dagprobe.shim.xcom import xcom as store
+
+        store.set(self._task_id, key, value)
+
     def xcom_pull(self, task_ids: Any = None, key: str = "return_value", **_: Any) -> Any:
         from dagprobe.shim.xcom import xcom as store
 
@@ -237,6 +242,22 @@ def build_context(task: Any, logical_date: datetime, profile: str = "3.3") -> di
     elif profile != "3.3":
         msg = f"unknown profile {profile!r} (known: 2.10, 3.3)"
         raise ValueError(msg)
+    # data_interval (Срез 28, как в Airflow): start = logical_date,
+    # end = следующий тик расписания; нет расписания → end = start.
+    # После легаси-блока: громкая ошибка неизвестного расписания — от prev_next
+    import pendulum
+
+    from dagprobe.shim import _timetable
+
+    schedule = getattr(task.dag, "schedule", None)
+    if schedule is None or schedule == "@once":
+        di_end = logical_date
+    elif isinstance(schedule, timedelta):
+        di_end = logical_date + schedule
+    else:
+        di_end = _timetable.next_tick(logical_date, schedule)
+    ctx["data_interval_start"] = pendulum.instance(logical_date)
+    ctx["data_interval_end"] = pendulum.instance(di_end)
     return ctx
 
 
